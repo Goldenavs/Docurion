@@ -1,7 +1,7 @@
 import { useState, useCallback } from 'react';
 import { useDropzone } from 'react-dropzone';
-import { UploadCloud, FileCode, Loader2, ArrowRight } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { UploadCloud, Loader2, ArrowRight } from 'lucide-react';
+import { motion } from 'framer-motion';
 // import { supabase } from '../lib/supabaseClient'; // Uncomment when ready to wire back up
 
 export default function WorkspaceSetup() {
