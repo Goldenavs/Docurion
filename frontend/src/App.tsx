@@ -1,28 +1,31 @@
-import { useEffect, useState } from 'react'
-import { supabase } from './lib/supabaseClient'
+import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import Layout from './components/Layout';
+import WorkspaceSetup from './components/WorkspaceSetup';
+import ProjectHub from './components/ProjectHub';
+import DocsViewer from './components/DocsViewer';
 
-function App() {
-  const [connectionStatus, setConnectionStatus] = useState("Testing...")
-
-  useEffect(() => {
-    async function testConnection() {
-      // Try to fetch projects (it will be empty, but that's a successful check!)
-      const { data, error } = await supabase.from('projects').select('*')
-      
-      if (error) {
-        setConnectionStatus("Connection Failed: " + error.message)
-      } else {
-        setConnectionStatus("Connected to Supabase! Projects found: " + data.length)
-      }
-    }
-    testConnection()
-  }, [])
-
+function DashboardPlaceholder() {
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-900 text-white">
-      <h1 className="text-3xl font-bold">{connectionStatus}</h1>
+    <div>
+      <h2 className="font-display text-3xl font-bold mb-2">Dashboard</h2>
+      <p className="text-[var(--text-muted)]">Your recent workspaces will appear here.</p>
     </div>
-  )
+  );
 }
 
-export default App
+function App() {
+  return (
+    <BrowserRouter>
+      <Routes>
+        <Route path="/" element={<Layout />}>
+          <Route index element={<DashboardPlaceholder />} />
+          <Route path="new" element={<WorkspaceSetup />} />
+          <Route path="project/:id" element={<ProjectHub />} />
+          <Route path="docs/:id" element={<DocsViewer />} />
+        </Route>
+      </Routes>
+    </BrowserRouter>
+  );
+}
+
+export default App;
