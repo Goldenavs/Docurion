@@ -1,13 +1,12 @@
 @import "tailwindcss";
 
 @theme {
-  /* Font Family Overrides */
   --font-sans: 'Inter', sans-serif;
   --font-display: 'Montserrat', sans-serif;
 
-  /* Brand Orange Palette */
   --color-brand-50: #fff7ed;
   --color-brand-100: #ffedd5;
+  --color-brand-400: #fb923c;
   --color-brand-500: #f97316;
   --color-brand-600: #ea580c;
   --color-brand-900: #7c2d12;
@@ -15,25 +14,41 @@
 
 @layer base {
   :root {
-    --bg-base: #f8fafc;      /* Slate 50 */
-    --bg-surface: #ffffff;
-    --text-main: #0f172a;    /* Slate 900 */
-    --text-muted: #64748b;   /* Slate 500 */
-    --border-color: #e2e8f0; /* Slate 200 */
+    --bg-base: #f8fafc;
+    /* Use rgba so backdrop-blur works */
+    --bg-surface: rgba(255, 255, 255, 0.7); 
+    --text-main: #0f172a;
+    --text-muted: #64748b;
+    --border-color: rgba(226, 232, 240, 0.8);
   }
 
-  /* Add 'dark' class to html/body later to toggle */
   .dark {
-    --bg-base: #09090b;      /* Zinc 950 */
-    --bg-surface: #18181b;   /* Zinc 900 */
-    --text-main: #fafafa;    /* Zinc 50 */
-    --text-muted: #a1a1aa;   /* Zinc 400 */
-    --border-color: #27272a; /* Zinc 800 */
+    --bg-base: #050505;
+    /* Dark glassmorphism */
+    --bg-surface: rgba(24, 24, 27, 0.6);
+    --text-main: #fafafa;
+    --text-muted: #a1a1aa;
+    --border-color: rgba(39, 39, 42, 0.8);
   }
 
   body {
     background-color: var(--bg-base);
     color: var(--text-main);
-    transition: background-color 0.3s ease, color 0.3s ease;
+    transition: color 0.3s ease;
+  }
+
+  /* Super clean scrollbar */
+  .custom-scrollbar::-webkit-scrollbar {
+    width: 6px;
+  }
+  .custom-scrollbar::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .custom-scrollbar::-webkit-scrollbar-thumb {
+    background: var(--border-color);
+    border-radius: 10px;
+  }
+  .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+    background: var(--text-muted);
   }
 }
