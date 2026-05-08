@@ -1,13 +1,16 @@
+// frontend/src/components/WorkspaceSetup.tsx
 import { useState, useCallback } from 'react';
 import { useDropzone } from 'react-dropzone';
-import { UploadCloud, Loader2, ArrowRight } from 'lucide-react';
-import { motion } from 'framer-motion';
-// import { supabase } from '../lib/supabaseClient'; // Uncomment when ready to wire back up
+import { UploadCloud, Loader2, ArrowRight, FileCode, X } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { useNavigate } from 'react-router-dom';
+import { supabase } from '../lib/supabaseClient';
 
 export default function WorkspaceSetup() {
   const [projectName, setProjectName] = useState('');
   const [files, setFiles] = useState<{ filename: string; content: string }[]>([]);
   const [isUploading, setIsUploading] = useState(false);
+  const navigate = useNavigate();
 
   const onDrop = useCallback((acceptedFiles: File[]) => {
     acceptedFiles.forEach((file) => {
@@ -22,15 +25,56 @@ export default function WorkspaceSetup() {
     });
   }, []);
 
+  const removeFile = (indexToRemove: number) => {
+    setFiles((prev) => prev.filter((_, index) => index !== indexToRemove));
+  };
+
   const { getRootProps, getInputProps, isDragActive } = useDropzone({ onDrop });
 
   const handleSaveProject = async () => {
     setIsUploading(true);
-    // Simulation for UI testing
-    setTimeout(() => {
+    try {
+      // 1. Get current user (if any)
+      const { data: { user } } = await supabase.auth.getUser();
+
+      // 2. Create the Project in Supabase
+      const { data: projectData, error: projectError } = await supabase
+        .from('projects')
+        .insert({
+          name: projectName,
+          user_id: user ? user.id : null, // Handles both Logged In & Guests
+          description: `Uploaded ${files.length} source files.`,
+        })
+        .select()
+        .single();
+
+      if (projectError) throw projectError;
+      const projectId = projectData.id;
+
+      // 3. Prepare files for bulk insertion
+      const fileInserts = files.map((f) => ({
+        project_id: projectId,
+        filename: f.filename,
+        content: f.content,
+        language: f.filename.split('.').pop() || 'text', // Extracts file extension
+      }));
+
+      // 4. Save files to Supabase
+      const { error: filesError } = await supabase
+        .from('files')
+        .insert(fileInserts);
+
+      if (filesError) throw filesError;
+
+      // 5. Navigate to the new Project Hub!
+      navigate(`/project/${projectId}`);
+
+    } catch (error: any) {
+      console.error("Error creating workspace:", error);
+      alert(error.message || "Failed to save project.");
+    } finally {
       setIsUploading(false);
-      alert('UI Test: Project Data Saved!');
-    }, 1500);
+    }
   };
 
   return (
@@ -63,10 +107,9 @@ export default function WorkspaceSetup() {
         whileTap={{ scale: 0.98 }}
         className="mt-4"
       >
-        {/* Standard div for Dropzone to prevent TS conflicts */}
         <div
           {...getRootProps()}
-          className={`flex flex-col items-center justify-center w-full h-56 border-2 border-dashed rounded-xl cursor-pointer transition-colors duration-300 ${
+          className={`flex flex-col items-center justify-center w-full h-40 border-2 border-dashed rounded-xl cursor-pointer transition-colors duration-300 ${
             isDragActive 
               ? 'border-brand-500 bg-brand-500/10' 
               : 'border-[var(--border-color)] bg-[var(--bg-base)] hover:border-brand-400/50'
@@ -78,15 +121,41 @@ export default function WorkspaceSetup() {
             animate={{ y: isDragActive ? -5 : 0, scale: isDragActive ? 1.1 : 1 }}
             transition={{ duration: 0.2 }}
           >
-            <UploadCloud className={`w-12 h-12 mb-4 ${isDragActive ? 'text-brand-500' : 'text-[var(--text-muted)]'}`} />
+            <UploadCloud className={`w-10 h-10 mb-3 ${isDragActive ? 'text-brand-500' : 'text-[var(--text-muted)]'}`} />
           </motion.div>
           
           <p className="text-sm font-medium text-[var(--text-main)]">
             {isDragActive ? 'Drop assets here...' : 'Drag & drop source files, or click to browse'}
           </p>
-          <p className="text-xs text-[var(--text-muted)] mt-2">Supports .js, .ts, .py, .json</p>
         </div>
       </motion.div>
+
+      {/* Uploaded Files Preview List */}
+      <AnimatePresence>
+        {files.length > 0 && (
+          <motion.div 
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+            className="mt-6 space-y-2 overflow-hidden"
+          >
+            <h4 className="text-sm font-semibold text-[var(--text-muted)] mb-3">Staged Files ({files.length})</h4>
+            <div className="max-h-40 overflow-y-auto space-y-2 pr-2 custom-scrollbar">
+              {files.map((file, index) => (
+                <div key={index} className="flex items-center justify-between p-3 bg-[var(--bg-base)] border border-[var(--border-color)] rounded-lg text-sm">
+                  <div className="flex items-center gap-3 overflow-hidden">
+                    <FileCode className="w-4 h-4 text-brand-500 flex-shrink-0" />
+                    <span className="truncate">{file.filename}</span>
+                  </div>
+                  <button onClick={() => removeFile(index)} className="text-[var(--text-muted)] hover:text-red-500 transition-colors">
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Submit Button */}
       <motion.button
@@ -94,7 +163,7 @@ export default function WorkspaceSetup() {
         whileTap={!(isUploading || files.length === 0 || !projectName) ? { scale: 0.98 } : {}}
         onClick={handleSaveProject}
         disabled={isUploading || files.length === 0 || !projectName}
-        className="mt-6 w-full flex items-center justify-center px-4 py-3.5 bg-brand-600 text-white rounded-xl hover:bg-brand-500 disabled:opacity-50 disabled:cursor-not-allowed transition-all font-semibold tracking-wide shadow-lg shadow-brand-500/25"
+        className="mt-8 w-full flex items-center justify-center px-4 py-3.5 bg-brand-600 text-white rounded-xl hover:bg-brand-500 disabled:opacity-50 disabled:cursor-not-allowed transition-all font-semibold tracking-wide shadow-lg shadow-brand-500/25"
       >
         {isUploading ? (
           <Loader2 className="w-5 h-5 animate-spin" />
