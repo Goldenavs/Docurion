@@ -1,6 +1,6 @@
 // frontend/src/components/ProjectHub.tsx
 import { useEffect, useState } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useParams, Link, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { FileCode, Sparkles, ArrowLeft, Terminal, Loader2 } from 'lucide-react';
 import { supabase } from '../lib/supabaseClient';
@@ -11,6 +11,7 @@ export default function ProjectHub() {
   const [files, setFiles] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [isGenerating, setIsGenerating] = useState(false);
+  const navigate = useNavigate();
 
   useEffect(() => {
     if (id) {
