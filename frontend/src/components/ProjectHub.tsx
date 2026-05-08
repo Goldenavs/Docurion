@@ -10,6 +10,7 @@ export default function ProjectHub() {
   const [project, setProject] = useState<any>(null);
   const [files, setFiles] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [isGenerating, setIsGenerating] = useState(false);
 
   useEffect(() => {
     if (id) {
@@ -67,6 +68,31 @@ export default function ProjectHub() {
     );
   }
 
+  const handleGenerate = async (type: string) => {
+    setIsGenerating(true);
+    try {
+      const response = await fetch('http://localhost:5000/api/generate-docs', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ projectId: id, type })
+      });
+
+      const data = await response.json();
+      
+      if (!response.ok) throw new Error(data.error);
+
+      // Once done, route them to the document viewer!
+      alert("Documentation Generated!");
+      navigate(`/docs/${data.docId}`); // We will build this page next
+      
+    } catch (error: any) {
+      console.error(error);
+      alert(error.message || "Failed to generate docs.");
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
   return (
     <motion.div 
       initial={{ opacity: 0, y: 10 }}
@@ -114,9 +140,14 @@ export default function ProjectHub() {
           <h3 className="font-semibold text-lg border-b border-[var(--border-color)] pb-2">Generate Docs</h3>
           <div className="bg-[var(--bg-surface)] border border-[var(--border-color)] rounded-xl p-6 flex flex-col gap-4">
             
-            {/* We will wire these buttons to the Node.js backend next! */}
-            <button className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-brand-600 hover:bg-brand-500 text-white font-medium rounded-xl transition-all shadow-md shadow-brand-500/20 group">
-              <Sparkles className="w-4 h-4 group-hover:animate-pulse" /> Generate README
+            {/* THIS IS THE REPLACED BUTTON */}
+            <button 
+              onClick={() => handleGenerate('README')}
+              disabled={isGenerating || files.length === 0}
+              className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-brand-600 hover:bg-brand-500 text-white font-medium rounded-xl transition-all shadow-md shadow-brand-500/20 group disabled:opacity-50"
+            >
+              {isGenerating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4 group-hover:animate-pulse" />} 
+              {isGenerating ? 'Analyzing Codebase...' : 'Generate README'}
             </button>
             
             <button className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-[var(--bg-base)] border border-[var(--border-color)] hover:border-brand-500 hover:text-brand-500 font-medium rounded-xl transition-all">
