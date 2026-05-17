@@ -27,8 +27,15 @@ export default function Dashboard() {
         query = query.eq('user_id', user.id);
         setIsGuest(false);
       } else {
-        // Guest: Fetch projects where user_id is null 
-        query = query.is('user_id', null);
+        // Guest: Fetch projects matching their Local Storage ID
+        const guestId = localStorage.getItem('docurion_guest_id');
+        
+        if (guestId) {
+          query = query.eq('guest_id', guestId);
+        } else {
+          // If no guest ID exists somehow, return an empty list instead of everyone's data
+          query = query.eq('guest_id', 'none'); 
+        }
         setIsGuest(true);
       }
 

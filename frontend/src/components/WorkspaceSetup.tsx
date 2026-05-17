@@ -13,12 +13,33 @@ export default function WorkspaceSetup() {
   const navigate = useNavigate();
 
   const onDrop = useCallback((acceptedFiles: File[]) => {
+    // 1. BLACKLIST: Folders we NEVER want to read
+    const ignoredPaths = ['node_modules', '.git', 'dist', 'build', 'coverage'];
+    
+    // 2. WHITELIST: The ONLY file types we actually care about documenting
+    const allowedExtensions = ['.js', '.jsx', '.ts', '.tsx', '.json', '.md', '.html', '.css', '.py', '.java', '.sql'];
+
     acceptedFiles.forEach((file) => {
+      // THE MAGIC: react-dropzone hides the full path here!
+      const filePath = (file as any).path || file.webkitRelativePath || file.name;
+
+      // Check Blacklist (Is it inside a junk folder?)
+      const isIgnoredPath = ignoredPaths.some(ignored => filePath.includes(ignored));
+      
+      // Check Whitelist (Is it a valid code file?)
+      const isAllowedExt = allowedExtensions.some(ext => file.name.toLowerCase().endsWith(ext));
+
+      // IF it's in a bad folder, OR it's not a code file -> SKIP IT!
+      if (isIgnoredPath || !isAllowedExt) {
+        return; 
+      }
+
+      // If it survives the gauntlet, read it!
       const reader = new FileReader();
       reader.onload = () => {
         setFiles((prev) => [
           ...prev,
-          { filename: file.name, content: reader.result as string },
+          { filename: filePath, content: reader.result as string }, // Save the full path so the AI knows where it lives!
         ]);
       };
       reader.readAsText(file);
@@ -34,15 +55,17 @@ export default function WorkspaceSetup() {
   const handleSaveProject = async () => {
     setIsUploading(true);
     try {
-      // 1. Get current user (if any)
+      // 1. Get current user & local guest ID
       const { data: { user } } = await supabase.auth.getUser();
+      const guestId = localStorage.getItem('docurion_guest_id');
 
-      // 2. Create the Project in Supabase
+      // 2. Create the Project in Supabase (Now with Guest ID!)
       const { data: projectData, error: projectError } = await supabase
         .from('projects')
         .insert({
           name: projectName,
-          user_id: user ? user.id : null, // Handles both Logged In & Guests
+          user_id: user ? user.id : null, 
+          guest_id: user ? null : guestId, // Saves the unique session ID for guests
           description: `Uploaded ${files.length} source files.`,
         })
         .select()
@@ -56,7 +79,7 @@ export default function WorkspaceSetup() {
         project_id: projectId,
         filename: f.filename,
         content: f.content,
-        language: f.filename.split('.').pop() || 'text', // Extracts file extension
+        language: f.filename.split('.').pop() || 'text',
       }));
 
       // 4. Save files to Supabase
@@ -66,7 +89,7 @@ export default function WorkspaceSetup() {
 
       if (filesError) throw filesError;
 
-      // 5. Navigate to the new Project Hub!
+      // 5. Navigate to the new Project Hub
       navigate(`/project/${projectId}`);
 
     } catch (error: any) {

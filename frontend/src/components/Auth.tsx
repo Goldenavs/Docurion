@@ -63,7 +63,12 @@ export default function Auth() {
   };
 
   const handleGuestLogin = () => {
-    // Guest users bypass auth and go straight to the dashboard
+    // If they don't have a guest ID yet, create one!
+    if (!localStorage.getItem('docurion_guest_id')) {
+      const newGuestId = crypto.randomUUID();
+      localStorage.setItem('docurion_guest_id', newGuestId);
+    }
+    
     navigate('/dashboard');
   };
 
