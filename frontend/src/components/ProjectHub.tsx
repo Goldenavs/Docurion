@@ -72,7 +72,10 @@ export default function ProjectHub() {
   const handleGenerate = async (type: string) => {
     setIsGenerating(true);
     try {
-      const response = await fetch('http://localhost:5000/api/generate-docs', {
+      // PRO-TIP APPLIED: Dynamically grab the backend URL based on the environment
+      const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+      
+      const response = await fetch(`${API_URL}/api/generate-docs`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ projectId: id, type })
@@ -84,7 +87,7 @@ export default function ProjectHub() {
 
       // Once done, route them to the document viewer!
       alert("Documentation Generated!");
-      navigate(`/docs/${data.docId}`); // We will build this page next
+      navigate(`/docs/${data.docId}`); 
       
     } catch (error: any) {
       console.error(error);
