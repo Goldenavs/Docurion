@@ -53,3 +53,9 @@
     background: var(--text-muted);
   }
 }
+
+@keyframes shine {
+  100% {
+    transform: translateX(100%);
+  }
+}
