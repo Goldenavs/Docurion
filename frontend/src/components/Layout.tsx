@@ -1,16 +1,19 @@
-import { Link, useLocation, useOutlet } from 'react-router-dom';
-import { LayoutDashboard, PlusSquare, Settings, BookOpen, Sun, Moon } from 'lucide-react';
+// frontend/src/components/Layout.tsx
 import { useEffect, useState } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
-import Background from './Background';
+import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom';
+import { LayoutDashboard, PlusCircle, History, BookOpen, LogOut, FileCode2, Settings, Sun, Moon } from 'lucide-react';
+import { supabase } from '../lib/supabaseClient';
+import { motion } from 'framer-motion';
+import Background from './Background'; // <-- Restored your custom background!
 
 export default function Layout() {
   const location = useLocation();
-  const currentOutlet = useOutlet();
-  
-  // Theme state: default to dark
-  const [isDark, setIsDark] = useState(true);
+  const navigate = useNavigate();
+  const [recentProjects, setRecentProjects] = useState<any[]>([]);
+  const [isGuest, setIsGuest] = useState(false);
+  const [isDark, setIsDark] = useState(true); // <-- Restored Theme State
 
+  // Handle Theme Switching
   useEffect(() => {
     if (isDark) {
       document.documentElement.classList.add('dark');
@@ -19,98 +22,186 @@ export default function Layout() {
     }
   }, [isDark]);
 
-  const navItems = [
-    { name: 'Dashboard', path: '/', icon: <LayoutDashboard className="w-5 h-5" /> },
-    { name: 'New Workspace', path: '/new', icon: <PlusSquare className="w-5 h-5" /> },
-  ];
+  // Re-fetch the history list whenever the user navigates
+  useEffect(() => {
+    fetchHistory();
+  }, [location.pathname]); 
+
+  const fetchHistory = async () => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      const guestId = localStorage.getItem('docurion_guest_id');
+      
+      let query = supabase
+        .from('projects')
+        .select('id, name')
+        .order('created_at', { ascending: false })
+        .limit(10); 
+
+      if (user) {
+        query = query.eq('user_id', user.id);
+        setIsGuest(false);
+      } else {
+        query = query.eq('guest_id', guestId || 'none');
+        setIsGuest(true);
+      }
+
+      const { data } = await query;
+      if (data) setRecentProjects(data);
+    } catch (error) {
+      console.error("Failed to fetch history for sidebar", error);
+    }
+  };
+
+  const handleLogout = async () => {
+    if (!isGuest) {
+      await supabase.auth.signOut();
+    }
+    navigate('/');
+  };
+
+  const isActive = (path: string) => location.pathname === path;
 
   return (
-    <div className="flex h-screen text-[var(--text-main)] overflow-hidden">
+    <div className="flex h-screen bg-transparent text-[var(--text-main)] overflow-hidden font-sans relative transition-colors duration-300">
+      
+      {/* Restored Global Background Engine */}
       <Background />
 
-      {/* Sidebar with Glassmorphism */}
-      <aside className="w-64 border-r border-[var(--border-color)] bg-[var(--bg-surface)]/80 backdrop-blur-xl flex flex-col z-10">
-        <div className="p-6">
-          <Link to="/" className="flex items-center gap-2 group">
+      {/* =========================================
+        ELITE ADAPTIVE SIDEBAR
+        ========================================= */}
+      <div className="w-64 bg-[var(--bg-surface)]/80 backdrop-blur-2xl border-r border-[var(--border-color)] flex flex-col relative z-20 shadow-xl">
+        
+        {/* Logo Area */}
+        <div className="h-20 flex items-center px-6 border-b border-[var(--border-color)]">
+          <Link to="/dashboard" className="flex items-center gap-3 group">
             <div className="relative">
-              <BookOpen className="w-8 h-8 text-brand-500 relative z-10" />
-              {/* Icon Glow Effect */}
-              <div className="absolute inset-0 bg-brand-500 blur-md opacity-0 group-hover:opacity-40 transition-opacity duration-500" />
+              <BookOpen className="w-6 h-6 text-brand-500 relative z-10" />
+              <div className="absolute inset-0 bg-brand-500 blur-md opacity-40 group-hover:opacity-100 transition-opacity" />
             </div>
-            <h1 className="font-display text-2xl font-bold tracking-tight">
+            <span className="font-display font-bold text-lg tracking-wide">
               Docurion<span className="text-brand-500">.</span>
-            </h1>
+            </span>
           </Link>
         </div>
 
-        <nav className="flex-1 px-4 space-y-2 mt-4">
-          {navItems.map((item) => {
-            const isActive = location.pathname === item.path;
-            return (
-              <Link
-                key={item.name}
-                to={item.path}
-                className="relative flex items-center gap-3 px-4 py-3 rounded-xl transition-all font-medium overflow-hidden group"
-              >
-                {isActive && (
-                  <motion.div 
-                    layoutId="activeNav"
-                    className="absolute inset-0 bg-brand-50 dark:bg-brand-500/15 border border-brand-500/20 rounded-xl"
-                    transition={{ type: "spring", stiffness: 300, damping: 30 }}
-                  />
-                )}
-                <span className={`relative z-10 flex items-center gap-3 ${isActive ? 'text-brand-600 dark:text-brand-400' : 'text-[var(--text-muted)] group-hover:text-[var(--text-main)]'}`}>
-                  {item.icon}
-                  {item.name}
-                </span>
-              </Link>
-            );
-          })}
-        </nav>
+        {/* Main Navigation */}
+        <div className="p-4 space-y-1.5 border-b border-[var(--border-color)]">
+          <Link 
+            to="/dashboard"
+            className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${
+              isActive('/dashboard') 
+                ? 'bg-brand-500/10 text-brand-500' 
+                : 'text-[var(--text-muted)] hover:text-[var(--text-main)] hover:bg-[var(--bg-base)]'
+            }`}
+          >
+            <LayoutDashboard className="w-4.5 h-4.5" /> Workspace
+          </Link>
 
-        <div className="p-4 border-t border-[var(--border-color)] space-y-2">
-          {/* Theme Toggle Button */}
+          <Link 
+            to="/new"
+            className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${
+              isActive('/new') 
+                ? 'bg-brand-500/10 text-brand-500' 
+                : 'text-[var(--text-muted)] hover:text-[var(--text-main)] hover:bg-[var(--bg-base)]'
+            }`}
+          >
+            <PlusCircle className="w-4.5 h-4.5" /> New Project
+          </Link>
+
+          {/* Restored Settings Link */}
+          <Link 
+            to="/settings"
+            className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${
+              isActive('/settings') 
+                ? 'bg-brand-500/10 text-brand-500' 
+                : 'text-[var(--text-muted)] hover:text-[var(--text-main)] hover:bg-[var(--bg-base)]'
+            }`}
+          >
+            <Settings className="w-4.5 h-4.5" /> Settings
+          </Link>
+        </div>
+
+        {/* Dynamic Recent History */}
+        <div className="flex-1 overflow-y-auto custom-scrollbar px-4 py-3">
+          <div className="flex items-center gap-2 px-3 mb-3 text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wider">
+            <History className="w-3.5 h-3.5" /> Recent History
+          </div>
+          
+          <div className="space-y-1">
+            {recentProjects.length === 0 ? (
+              <div className="px-3 py-2 text-xs text-[var(--text-muted)]">No recent projects.</div>
+            ) : (
+              recentProjects.map((project) => {
+                const isProjectActive = location.pathname.includes(`/project/${project.id}`) || location.pathname.includes(`/docs/`);
+                
+                return (
+                  <Link 
+                    key={project.id}
+                    to={`/project/${project.id}`}
+                    className={`flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-all truncate ${
+                      isProjectActive
+                        ? 'bg-[var(--bg-base)] border border-[var(--border-color)] text-[var(--text-main)] shadow-sm' 
+                        : 'text-[var(--text-muted)] hover:text-[var(--text-main)] hover:bg-[var(--bg-base)] border border-transparent'
+                    }`}
+                  >
+                    <FileCode2 className={`w-4 h-4 flex-shrink-0 ${isProjectActive ? 'text-brand-500' : 'text-[var(--text-muted)]'}`} />
+                    <span className="truncate">{project.name}</span>
+                  </Link>
+                )
+              })
+            )}
+          </div>
+        </div>
+
+        {/* Restored Footer (Theme Toggle & Logout) */}
+        <div className="p-4 border-t border-[var(--border-color)] space-y-2 bg-[var(--bg-surface)]">
+          
+          {/* Animated Theme Toggle */}
           <button 
             onClick={() => setIsDark(!isDark)}
-            className="flex items-center justify-between w-full px-4 py-2.5 text-sm text-[var(--text-muted)] hover:text-[var(--text-main)] hover:bg-[var(--bg-base)]/50 rounded-lg transition-colors"
+            className="w-full flex items-center justify-between px-3 py-2.5 text-sm font-medium text-[var(--text-muted)] hover:text-[var(--text-main)] hover:bg-[var(--bg-base)] rounded-lg transition-colors group"
           >
-            <span className="flex items-center gap-3">
-              {isDark ? <Moon className="w-4 h-4" /> : <Sun className="w-4 h-4" />}
-              {isDark ? 'Dark Mode' : 'Light Mode'}
-            </span>
-            <div className={`w-8 h-4 rounded-full p-0.5 transition-colors ${isDark ? 'bg-brand-500' : 'bg-gray-300'}`}>
-              <motion.div 
-                layout
-                className="w-3 h-3 bg-white rounded-full shadow-sm"
-                animate={{ x: isDark ? 16 : 0 }}
-              />
+            <div className="flex items-center gap-3">
+              {isDark ? <Moon className="w-4.5 h-4.5" /> : <Sun className="w-4.5 h-4.5 group-hover:text-amber-500 transition-colors" />}
+              <span>{isDark ? 'Dark Mode' : 'Light Mode'}</span>
+            </div>
+            
+            {/* Slick Toggle Switch UI */}
+            <div className={`w-9 h-5 rounded-full flex items-center p-0.5 transition-colors duration-300 ${isDark ? 'bg-brand-500' : 'bg-zinc-300 dark:bg-zinc-700'}`}>
+              <div className={`w-4 h-4 rounded-full bg-white transition-transform duration-300 shadow-sm ${isDark ? 'translate-x-4' : 'translate-x-0'}`} />
             </div>
           </button>
-          
-          <button className="flex items-center gap-3 px-4 py-2.5 w-full text-sm text-[var(--text-muted)] hover:text-[var(--text-main)] hover:bg-[var(--bg-base)]/50 rounded-lg transition-colors">
-            <Settings className="w-4 h-4" />
-            Settings
+
+          {/* Logout Button */}
+          <button 
+            onClick={handleLogout}
+            className="w-full flex items-center gap-3 px-3 py-2.5 text-sm font-medium text-[var(--text-muted)] hover:text-red-500 hover:bg-red-500/10 rounded-lg transition-colors"
+          >
+            <LogOut className="w-4.5 h-4.5" />
+            {isGuest ? 'Leave Session' : 'Sign Out'}
           </button>
         </div>
-      </aside>
+      </div>
 
-      {/* Main Content Area */}
-      <main className="flex-1 overflow-y-auto custom-scrollbar relative z-10">
-        <div className="p-8 md:p-12 max-w-6xl mx-auto">
-          {/* Page Transitions */}
-          <AnimatePresence mode="wait">
-            <motion.div
-              key={location.pathname}
-              initial={{ opacity: 0, y: 15, filter: 'blur(4px)' }}
-              animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
-              exit={{ opacity: 0, y: -15, filter: 'blur(4px)' }}
-              transition={{ duration: 0.3, ease: "easeOut" }}
-            >
-              {currentOutlet} {/* <-- 2. Render the frozen outlet instead of <Outlet /> */}
-            </motion.div>
-          </AnimatePresence>
-        </div>
-      </main>
+      {/* =========================================
+        MAIN CONTENT AREA
+        ========================================= */}
+      <div className="flex-1 overflow-y-auto relative z-10">
+        <main className="p-6 md:p-10 min-h-full">
+          <motion.div
+            key={location.pathname} 
+            initial={{ opacity: 0, y: 15 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.4, ease: "easeOut" }}
+            className="h-full"
+          >
+            <Outlet />
+          </motion.div>
+        </main>
+      </div>
+
     </div>
   );
 }
