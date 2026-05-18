@@ -176,6 +176,65 @@ app.post('/api/chat-doc', async (req, res) => {
   }
 });
 
+// ENDPOINT 4: The Enterprise GitHub Integration
+app.post('/api/push-github', async (req, res) => {
+  const { token, owner, repo, path, content, message } = req.body;
+  
+  if (!token || !owner || !repo || !path || !content) {
+    return res.status(400).json({ error: "Missing required GitHub configuration parameters." });
+  }
+
+  try {
+    const getUrl = `https://api.github.com/repos/${owner}/${repo}/contents/${path}`;
+    
+    // 1. Check if the file already exists (We need its SHA to update it)
+    const getResponse = await fetch(getUrl, {
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Accept': 'application/vnd.github.v3+json'
+      }
+    });
+
+    let sha = undefined;
+    if (getResponse.ok) {
+      const fileData = await getResponse.json();
+      sha = fileData.sha;
+    }
+
+    // 2. Base64 encode the markdown content (GitHub API requirement)
+    const base64Content = Buffer.from(content).toString('base64');
+    
+    const body = {
+      message: message || `docs: update ${path} via Docurion AI`,
+      content: base64Content,
+      ...(sha && { sha }) // Inject SHA if we are overwriting an existing file
+    };
+
+    // 3. Push the commit!
+    const putResponse = await fetch(getUrl, {
+      method: 'PUT',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Accept': 'application/vnd.github.v3+json',
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(body)
+    });
+
+    const putData = await putResponse.json();
+
+    if (!putResponse.ok) {
+      throw new Error(putData.message || "Failed to push to GitHub.");
+    }
+
+    // Return the URL to the newly committed file
+    res.json({ success: true, url: putData.content.html_url });
+  } catch (error) {
+    console.error('GitHub Push Error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
   console.log(`🚀 Docurion Stream Engine running on http://localhost:${PORT}`);
