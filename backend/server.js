@@ -22,7 +22,6 @@ function generateFileTree(files) {
   return treeString;
 }
 
-// ENDPOINT 1: Instantly create an empty document to route the user
 app.post('/api/init-doc', async (req, res) => {
   try {
     const { projectId, type = 'README' } = req.body;
@@ -30,13 +29,8 @@ app.post('/api/init-doc', async (req, res) => {
 
     const { data: docData, error } = await supabase
       .from('docs')
-      .insert({
-        project_id: projectId,
-        type: type,
-        content: { markdown: "" } 
-      })
-      .select()
-      .single();
+      .insert({ project_id: projectId, type: type, content: { markdown: "" } })
+      .select().single();
 
     if (error) throw error;
     res.json({ success: true, docId: docData.id });
@@ -45,9 +39,9 @@ app.post('/api/init-doc', async (req, res) => {
   }
 });
 
-// ENDPOINT 2: The ChatGPT-style Live Streamer (Server-Sent Events)
 app.get('/api/stream-doc/:docId', async (req, res) => {
   const { docId } = req.params;
+  const { complexity = '1' } = req.query; // <-- Catches the slider value!
 
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache');
@@ -65,29 +59,37 @@ app.get('/api/stream-doc/:docId', async (req, res) => {
       codeContext += `\n\n--- FILE: ${f.filename} ---\n\`\`\`${f.language}\n${f.content}\n\`\`\``;
     });
 
-    // 🛡️ THE SAFEGUARD: 1 token is roughly 4 characters. 
-    // 250k tokens = ~1,000,000 characters. We cap it at 800,000 to be perfectly safe.
     if (codeContext.length > 800000) {
-      console.warn("⚠️ Codebase too large, truncating to prevent 429 Rate Limit...");
-      codeContext = codeContext.substring(0, 800000) + "\n\n...[WARNING: CODEBASE TRUNCATED DUE TO AI FREE TIER LIMITS]...";
+      codeContext = codeContext.substring(0, 800000) + "\n\n...[WARNING: CODEBASE TRUNCATED DUE TO AI LIMITS]...";
     }
 
     const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
 
     let typeInstructions = "Generate a highly professional, production-ready README.md.";
-    if (doc.type === 'API_DOCS') {
-       typeInstructions = "Generate detailed API Documentation focusing on endpoints, methods, parameters, and request/response payloads.";
-    } else if (doc.type === 'ARCHITECTURE') {
-       typeInstructions = "Generate a System Architecture Document explaining component relationships, data flow, and core design patterns.";
+    if (doc.type === 'API_DOCS') typeInstructions = "Generate detailed API Documentation focusing on endpoints and payloads.";
+    else if (doc.type === 'ARCHITECTURE') typeInstructions = "Generate a System Architecture Document explaining component relationships.";
+
+    // 🔥 THE COMPLEXITY ENGINE
+    let complexityInstruction = "";
+    switch(complexity) {
+      case '1': complexityInstruction = "CRITICAL: Keep the output extremely simple, concise, and high-level. Summarize heavily. Keep it very short. Do not include excessive code blocks."; break;
+      case '2': complexityInstruction = "Keep the output brief but cover the main points cleanly."; break;
+      case '3': complexityInstruction = "Provide standard documentation with a balance of brevity and technical detail."; break;
+      case '4': complexityInstruction = "Provide comprehensive, detailed technical specs including edge cases."; break;
+      case '5': complexityInstruction = "CRITICAL: Provide a highly exhaustive, lengthy Staff-Engineer level deep dive. Explain every minor detail, configuration, and underlying mechanism. Output as much detail as possible."; break;
+      default: complexityInstruction = "Keep the output extremely simple, concise, and high-level.";
     }
 
     const systemPrompt = `You are an elite Staff Software Engineer and Technical Writer.
     ${typeInstructions}
     
+    COMPLEXITY & LENGTH REQUIREMENT:
+    ${complexityInstruction}
+    
     Project Map:
     ${projectMap}
     
-    Review the source code carefully. Do not hallucinate features. Make it beautiful, structured, and easy to read. Return ONLY valid markdown.`;
+    Review the source code carefully. Return ONLY valid markdown.`;
 
     const result = await model.generateContentStream([systemPrompt, codeContext]);
 
@@ -98,21 +100,14 @@ app.get('/api/stream-doc/:docId', async (req, res) => {
       res.write(`data: ${JSON.stringify({ text: chunkText })}\n\n`);
     }
 
-    await supabase.from('docs').update({
-      content: { markdown: fullText }
-    }).eq('id', docId);
+    await supabase.from('docs').update({ content: { markdown: fullText } }).eq('id', docId);
 
     res.write(`data: [DONE]\n\n`);
     res.end();
 
   } catch (error) {
-    console.error('Streaming Error:', error);
-    
-    // 🛡️ GRACEFUL ERROR HANDLING: Send a friendly message to the UI instead of crashing
     let errorMessage = "An error occurred while generating documentation.";
-    if (error.status === 429) {
-      errorMessage = "\n\n**⚠️ AI Rate Limit Exceeded:** You are requesting too much code too quickly for the free tier! Please wait 1 minute and try again.";
-    }
+    if (error.status === 429) errorMessage = "\n\n**⚠️ AI Rate Limit Exceeded:** Please wait 1 minute and try again.";
     
     res.write(`data: ${JSON.stringify({ text: errorMessage })}\n\n`);
     res.write(`data: [DONE]\n\n`);

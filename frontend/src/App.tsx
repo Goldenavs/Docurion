@@ -1,3 +1,4 @@
+// frontend/src/App.tsx
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import Layout from './components/Layout';
 import Auth from './components/Auth';
@@ -5,21 +6,21 @@ import Dashboard from './components/Dashboard';
 import WorkspaceSetup from './components/WorkspaceSetup';
 import ProjectHub from './components/ProjectHub';
 import DocsViewer from './components/DocsViewer';
+import Settings from './components/Settings'; // <-- New Import!
 
 function App() {
   return (
     <BrowserRouter>
       <Routes>
-        {/* 1. The Landing / Auth Page (No Sidebar) */}
         <Route path="/" element={<Auth />} />
-
-        {/* 2. The Main App (With Sidebar and Background) */}
+        
+        {/* All routes inside Layout have the Sidebar */}
         <Route element={<Layout />}>
-          {/* Notice these paths are absolute now */}
           <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/new" element={<WorkspaceSetup />} />
           <Route path="/project/:id" element={<ProjectHub />} />
           <Route path="/docs/:id" element={<DocsViewer />} />
+          <Route path="/settings" element={<Settings />} /> {/* <-- New Route! */}
         </Route>
       </Routes>
     </BrowserRouter>

@@ -55,7 +55,11 @@ export default function DocsViewer() {
 
   const startSSEStream = () => {
     const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
-    const sse = new EventSource(`${API_URL}/api/stream-doc/${id}`);
+    // Grab the user's complexity preference (defaulting to 1)
+    const complexity = localStorage.getItem('docurion_ai_complexity') || '1';
+    
+    // Attach it as a query parameter!
+    const sse = new EventSource(`${API_URL}/api/stream-doc/${id}?complexity=${complexity}`);
 
     sse.onmessage = (event) => {
       if (event.data === '[DONE]') {
