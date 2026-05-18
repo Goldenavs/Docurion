@@ -114,6 +114,67 @@ app.get('/api/stream-doc/:docId', async (req, res) => {
     res.end();
   }
 });
+// ENDPOINT 3: The Codebase Co-Pilot Chat!
+app.post('/api/chat-doc', async (req, res) => {
+  const { docId, message, history = [] } = req.body;
+  
+  // Set headers for raw native fetch streaming
+  res.setHeader('Content-Type', 'text/plain');
+  res.setHeader('Transfer-Encoding', 'chunked');
+
+  try {
+    const { data: doc } = await supabase.from('docs').select('*').eq('id', docId).single();
+    if (!doc) throw new Error("Document not found");
+
+    const { data: files } = await supabase.from('files').select('*').eq('project_id', doc.project_id);
+    const projectMap = generateFileTree(files);
+    
+    let codeContext = "";
+    files.forEach(f => {
+      codeContext += `\n\n--- FILE: ${f.filename} ---\n\`\`\`${f.language}\n${f.content}\n\`\`\``;
+    });
+
+    if (codeContext.length > 800000) {
+      codeContext = codeContext.substring(0, 800000) + "\n\n...[TRUNCATED]...";
+    }
+
+    const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+
+    // Format previous messages for Gemini
+    const geminiHistory = history.map(msg => ({
+      role: msg.role === 'assistant' ? 'model' : 'user',
+      parts: [{ text: msg.text }]
+    }));
+
+    // Start a chat session, injecting the codebase into the very first "invisible" message
+    const chat = model.startChat({
+      history: [
+        { 
+          role: "user", 
+          parts: [{ text: `You are an elite Senior Developer Co-Pilot. Here is the codebase I am working on:\n${projectMap}\n${codeContext}` }] 
+        },
+        { 
+          role: "model", 
+          parts: [{ text: "I have analyzed the codebase. I am ready to answer any questions, explain logic, or write code snippets based on this architecture." }] 
+        },
+        ...geminiHistory
+      ]
+    });
+
+    // Stream the new message!
+    const result = await chat.sendMessageStream(message);
+
+    for await (const chunk of result.stream) {
+      res.write(chunk.text());
+    }
+    res.end();
+
+  } catch (error) {
+    console.error('Chat Error:', error);
+    res.write(`\n\n**System Error:** ${error.message}`);
+    res.end();
+  }
+});
 
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
