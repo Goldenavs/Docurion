@@ -16,7 +16,7 @@ export default function ProjectHub() {
   
   const [project, setProject] = useState<any>(null);
   const [files, setFiles] = useState<any[]>([]);
-  const [docsHistory, setDocsHistory] = useState<any[]>([]);
+  const [docsHistory, setDocsHistory] = useState<{ id: string; type: string; created_at: string }[]>([]);
   
   const [loading, setLoading] = useState(true);
   const [isGenerating, setIsGenerating] = useState(false);
