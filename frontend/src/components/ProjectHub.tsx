@@ -2,7 +2,7 @@
 import { useEffect, useState } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { FileCode, Sparkles, ArrowLeft, Terminal, Loader2 } from 'lucide-react';
+import { FileCode, Sparkles, ArrowLeft, Terminal, Loader2, History } from 'lucide-react';
 import { supabase } from '../lib/supabaseClient';
 
 export default function ProjectHub() {
@@ -72,27 +72,24 @@ export default function ProjectHub() {
   const handleGenerate = async (type: string) => {
     setIsGenerating(true);
     try {
-      // PRO-TIP APPLIED: Dynamically grab the backend URL based on the environment
       const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
       
-      const response = await fetch(`${API_URL}/api/generate-docs`, {
+      // Hit the new Init endpoint
+      const response = await fetch(`${API_URL}/api/init-doc`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ projectId: id, type })
       });
 
       const data = await response.json();
-      
       if (!response.ok) throw new Error(data.error);
 
-      // Once done, route them to the document viewer!
-      alert("Documentation Generated!");
-      navigate(`/docs/${data.docId}`); 
+      // Instantly route them to the Docs Viewer, and pass a ?stream=true flag!
+      navigate(`/docs/${data.docId}?stream=true`); 
       
     } catch (error: any) {
       console.error(error);
-      alert(error.message || "Failed to generate docs.");
-    } finally {
+      alert(error.message || "Failed to initialize document generation.");
       setIsGenerating(false);
     }
   };
@@ -141,26 +138,34 @@ export default function ProjectHub() {
 
         {/* Right Col: AI Actions */}
         <div className="space-y-4">
-          <h3 className="font-semibold text-lg border-b border-[var(--border-color)] pb-2">Generate Docs</h3>
+          <h3 className="font-semibold text-lg border-b border-[var(--border-color)] pb-2">Generate Artifacts</h3>
           <div className="bg-[var(--bg-surface)] border border-[var(--border-color)] rounded-xl p-6 flex flex-col gap-4">
             
-            {/* THIS IS THE REPLACED BUTTON */}
             <button 
               onClick={() => handleGenerate('README')}
               disabled={isGenerating || files.length === 0}
               className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-brand-600 hover:bg-brand-500 text-white font-medium rounded-xl transition-all shadow-md shadow-brand-500/20 group disabled:opacity-50"
             >
               {isGenerating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4 group-hover:animate-pulse" />} 
-              {isGenerating ? 'Analyzing Codebase...' : 'Generate README'}
+              Generate README
             </button>
             
-            <button className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-[var(--bg-base)] border border-[var(--border-color)] hover:border-brand-500 hover:text-brand-500 font-medium rounded-xl transition-all">
-              <Terminal className="w-4 h-4" /> Generate API Docs
+            <button 
+              onClick={() => handleGenerate('API_DOCS')}
+              disabled={isGenerating || files.length === 0}
+              className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-[var(--bg-base)] border border-[var(--border-color)] hover:border-brand-500 hover:text-brand-500 font-medium rounded-xl transition-all disabled:opacity-50"
+            >
+              <Terminal className="w-4 h-4" /> Generate API Specs
+            </button>
+
+            <button 
+              onClick={() => handleGenerate('ARCHITECTURE')}
+              disabled={isGenerating || files.length === 0}
+              className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-[var(--bg-base)] border border-[var(--border-color)] hover:border-blue-500 hover:text-blue-500 font-medium rounded-xl transition-all disabled:opacity-50"
+            >
+              <History className="w-4 h-4" /> Map Architecture
             </button>
             
-            <p className="text-xs text-[var(--text-muted)] text-center mt-2 leading-relaxed">
-              This will process {files.length} files through the AI engine to generate structured documentation.
-            </p>
           </div>
         </div>
       </div>
