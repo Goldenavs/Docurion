@@ -4,7 +4,7 @@ import { useParams, Link, useSearchParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   ArrowLeft, Copy, Download, Loader2, CheckCircle2, 
-  MessageSquare, Send, X, Bot, User 
+  MessageSquare, Send, X, Bot, User, Edit3, Save 
 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
@@ -20,9 +20,13 @@ export default function DocsViewer() {
   const [loading, setLoading] = useState(true);
   const [copied, setCopied] = useState(false);
   
-  // Document Streaming State
+  // Document Streaming & Editing State
   const [streamedMarkdown, setStreamedMarkdown] = useState('');
   const [isStreaming, setIsStreaming] = useState(isStreamingFlag);
+  
+  // Live Editor State
+  const [isEditing, setIsEditing] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
 
   // Co-Pilot Chat State
   const [isChatOpen, setIsChatOpen] = useState(false);
@@ -35,7 +39,6 @@ export default function DocsViewer() {
     if (id) fetchDocument();
   }, [id]);
 
-  // Auto-scroll chat to bottom
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [chatHistory, isChatStreaming]);
@@ -83,7 +86,33 @@ export default function DocsViewer() {
     setTimeout(() => setCopied(false), 2000);
   };
 
-  // THE NEW CHAT FUNCTIONALITY
+  // RESTORED: The core download function
+  const handleDownload = () => {
+    const blob = new Blob([streamedMarkdown], { type: 'text/markdown' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${doc?.projects?.name || 'Project'}_${doc?.type}.md`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  const handleSaveMarkdown = async () => {
+    setIsSaving(true);
+    try {
+      const { error } = await supabase.from('docs').update({ content: { markdown: streamedMarkdown } }).eq('id', id);
+      if (error) throw error;
+      setIsEditing(false);
+    } catch (error: any) {
+      console.error("Save error:", error);
+      alert("Failed to save changes.");
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!chatInput.trim() || isChatStreaming) return;
@@ -103,12 +132,10 @@ export default function DocsViewer() {
 
       if (!response.body) throw new Error('No response body');
 
-      // Native fetch streaming reading!
       const reader = response.body.getReader();
       const decoder = new TextDecoder('utf-8');
       let aiMessage = '';
 
-      // Add empty assistant bubble
       setChatHistory(prev => [...prev, { role: 'assistant', text: '' }]);
 
       while (true) {
@@ -118,7 +145,6 @@ export default function DocsViewer() {
         const chunk = decoder.decode(value, { stream: true });
         aiMessage += chunk;
 
-        // Update the last message in the array in real-time
         setChatHistory(prev => {
           const newHistory = [...prev];
           newHistory[newHistory.length - 1].text = aiMessage;
@@ -172,28 +198,66 @@ export default function DocsViewer() {
           </h1>
         </div>
         
-        <div className="flex gap-3">
+        <div className="flex flex-wrap items-center gap-3">
+          
+          {isEditing ? (
+            <button onClick={handleSaveMarkdown} disabled={isSaving || isStreaming} className="flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-500 text-white rounded-lg text-sm font-medium transition-all shadow-md disabled:opacity-50">
+              {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+              {isSaving ? 'Saving...' : 'Save Changes'}
+            </button>
+          ) : (
+            <button onClick={() => setIsEditing(true)} disabled={isStreaming} className="flex items-center gap-2 px-4 py-2 bg-[var(--bg-surface)] border border-[var(--border-color)] hover:border-brand-500 hover:text-brand-500 rounded-lg text-sm font-medium transition-all shadow-sm disabled:opacity-50">
+              <Edit3 className="w-4 h-4" /> Live Edit
+            </button>
+          )}
+
           <button onClick={() => setIsChatOpen(!isChatOpen)} className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all shadow-md ${isChatOpen ? 'bg-brand-600 text-white hover:bg-brand-500' : 'bg-[var(--bg-surface)] border border-[var(--border-color)] hover:border-brand-500'}`}>
             <MessageSquare className="w-4 h-4" /> Co-Pilot
           </button>
-          <button onClick={handleCopy} disabled={isStreaming} className="flex items-center gap-2 px-4 py-2 bg-[var(--bg-surface)] border border-[var(--border-color)] hover:border-brand-500 rounded-lg text-sm font-medium transition-all disabled:opacity-50">
+          
+          <div className="h-6 w-px bg-[var(--border-color)] mx-1 hidden sm:block"></div>
+          
+          <button onClick={handleCopy} disabled={isStreaming} className="flex items-center justify-center p-2.5 bg-[var(--bg-surface)] border border-[var(--border-color)] hover:border-brand-500 rounded-lg text-[var(--text-muted)] hover:text-brand-500 transition-all disabled:opacity-50 tooltip-trigger" title="Copy Raw Markdown">
             {copied ? <CheckCircle2 className="w-4 h-4 text-green-500" /> : <Copy className="w-4 h-4" />}
           </button>
-          <button disabled={isStreaming} className="flex items-center gap-2 bg-zinc-800 hover:bg-zinc-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-all shadow-md disabled:opacity-50">
-            <Download className="w-4 h-4" /> Export
+
+          {/* RESTORED: The Export Button */}
+          <button onClick={handleDownload} disabled={isStreaming} className="flex items-center gap-2 bg-zinc-800 hover:bg-zinc-700 text-white px-4 py-2.5 rounded-lg text-sm font-medium transition-all shadow-md disabled:opacity-50 border border-zinc-700">
+            <Download className="w-4 h-4" /> Export .md
           </button>
+          
         </div>
       </div>
 
       {/* Dynamic Flex Container */}
-      <div className="flex flex-1 gap-6 overflow-hidden relative">
+      <div className="flex flex-1 gap-6 overflow-hidden relative w-full">
         
-        {/* Left Side: Markdown Viewer */}
-        <div className={`flex-1 transition-all duration-300 overflow-y-auto custom-scrollbar bg-[var(--bg-surface)] border border-[var(--border-color)] rounded-2xl p-6 md:p-10 shadow-sm ${isChatOpen ? 'pr-4 md:pr-10' : 'max-w-5xl mx-auto w-full'}`}>
-          <div className="prose dark:prose-invert max-w-none prose-headings:font-display prose-a:text-brand-500 hover:prose-a:text-brand-400">
-            <ReactMarkdown components={markdownComponents}>{streamedMarkdown}</ReactMarkdown>
-            {isStreaming && <span className="inline-block w-2 h-5 bg-brand-500 ml-1 animate-pulse align-middle" />}
+        {/* Left Side: Editor & Preview Area */}
+        <div className={`flex-1 flex gap-6 overflow-hidden transition-all duration-300 ${!isEditing && !isChatOpen ? 'max-w-5xl mx-auto w-full' : 'w-full'}`}>
+
+          {isEditing && (
+            <div className="flex-1 flex flex-col bg-[var(--bg-surface)] border border-[var(--border-color)] rounded-2xl overflow-hidden shadow-sm shrink-0 min-w-[300px]">
+              <div className="px-4 py-3 bg-[var(--bg-base)] border-b border-[var(--border-color)] text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wider flex items-center gap-2">
+                <Edit3 className="w-4 h-4" /> Raw Markdown
+              </div>
+              <textarea
+                value={streamedMarkdown}
+                onChange={(e) => setStreamedMarkdown(e.target.value)}
+                className="flex-1 w-full p-6 bg-transparent resize-none outline-none font-mono text-sm text-[var(--text-main)] custom-scrollbar leading-relaxed"
+                spellCheck={false}
+                placeholder="Start typing your markdown here..."
+              />
+            </div>
+          )}
+
+          {/* Rendered Preview Pane */}
+          <div className={`flex-1 overflow-y-auto custom-scrollbar bg-[var(--bg-surface)] border border-[var(--border-color)] rounded-2xl p-6 md:p-10 shadow-sm ${isEditing ? 'shrink-0 min-w-[300px]' : ''}`}>
+            <div className="prose dark:prose-invert max-w-none prose-headings:font-display prose-a:text-brand-500 hover:prose-a:text-brand-400">
+              <ReactMarkdown components={markdownComponents}>{streamedMarkdown}</ReactMarkdown>
+              {isStreaming && <span className="inline-block w-2 h-5 bg-brand-500 ml-1 animate-pulse align-middle" />}
+            </div>
           </div>
+
         </div>
 
         {/* Right Side: Co-Pilot Chat Panel */}
@@ -206,7 +270,6 @@ export default function DocsViewer() {
               transition={{ type: "spring", stiffness: 300, damping: 30 }}
               className="hidden lg:flex flex-col bg-[var(--bg-surface)] border border-[var(--border-color)] rounded-2xl shadow-xl overflow-hidden shrink-0"
             >
-              {/* Chat Header */}
               <div className="p-4 border-b border-[var(--border-color)] bg-[var(--bg-base)] flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <Bot className="w-5 h-5 text-brand-500" />
@@ -217,7 +280,6 @@ export default function DocsViewer() {
                 </button>
               </div>
 
-              {/* Chat Messages */}
               <div className="flex-1 overflow-y-auto p-4 space-y-6 custom-scrollbar text-sm">
                 {chatHistory.length === 0 ? (
                   <div className="h-full flex flex-col items-center justify-center text-center opacity-50">
@@ -232,11 +294,7 @@ export default function DocsViewer() {
                         {msg.role === 'user' ? <User className="w-4 h-4" /> : <Bot className="w-4 h-4 text-brand-500" />}
                       </div>
                       <div className={`max-w-[80%] rounded-2xl px-4 py-3 ${msg.role === 'user' ? 'bg-brand-600 text-white' : 'bg-[var(--bg-base)] border border-[var(--border-color)] prose dark:prose-invert prose-sm'}`}>
-                        {msg.role === 'user' ? (
-                          <p>{msg.text}</p>
-                        ) : (
-                          <ReactMarkdown components={markdownComponents}>{msg.text || '...'}</ReactMarkdown>
-                        )}
+                        {msg.role === 'user' ? <p>{msg.text}</p> : <ReactMarkdown components={markdownComponents}>{msg.text || '...'}</ReactMarkdown>}
                       </div>
                     </div>
                   ))
@@ -244,7 +302,6 @@ export default function DocsViewer() {
                 <div ref={messagesEndRef} />
               </div>
 
-              {/* Chat Input */}
               <div className="p-4 border-t border-[var(--border-color)] bg-[var(--bg-base)]">
                 <form onSubmit={handleSendMessage} className="relative">
                   <input 
@@ -254,11 +311,7 @@ export default function DocsViewer() {
                     placeholder="Ask Co-Pilot..."
                     className="w-full pl-4 pr-12 py-3 bg-[var(--bg-surface)] border border-[var(--border-color)] rounded-xl focus:outline-none focus:border-brand-500 transition-colors text-sm"
                   />
-                  <button 
-                    type="submit" 
-                    disabled={isChatStreaming || !chatInput.trim()}
-                    className="absolute right-2 top-1/2 -translate-y-1/2 p-2 bg-brand-600 hover:bg-brand-500 text-white rounded-lg disabled:opacity-50 transition-colors"
-                  >
+                  <button type="submit" disabled={isChatStreaming || !chatInput.trim()} className="absolute right-2 top-1/2 -translate-y-1/2 p-2 bg-brand-600 hover:bg-brand-500 text-white rounded-lg disabled:opacity-50 transition-colors">
                     <Send className="w-4 h-4" />
                   </button>
                 </form>
