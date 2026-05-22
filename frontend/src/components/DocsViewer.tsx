@@ -1,26 +1,17 @@
 // frontend/src/components/DocsViewer.tsx
 import { useEffect, useState, useRef } from 'react';
-import { useParams, Link, useSearchParams, useNavigate } from 'react-router-dom';
+import { useParams, Link, useSearchParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   ArrowLeft, Copy, Download, Loader2, CheckCircle2, 
-  MessageSquare, Send, X, Bot, User, Edit3, Save
+  MessageSquare, Send, X, Bot, User, Edit3, Save 
 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import { supabase } from '../lib/supabaseClient';
 
-const GithubIcon = () => (
-  <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
-    <path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/>
-  </svg>
-);
-
 export default function DocsViewer() {
-  const navigate = useNavigate();
-  const [isPushing, setIsPushing] = useState(false);
-
   const { id } = useParams();
   const [searchParams] = useSearchParams();
   const isStreamingFlag = searchParams.get('stream') === 'true';
@@ -29,15 +20,12 @@ export default function DocsViewer() {
   const [loading, setLoading] = useState(true);
   const [copied, setCopied] = useState(false);
   
-  // Document Streaming & Editing State
   const [streamedMarkdown, setStreamedMarkdown] = useState('');
   const [isStreaming, setIsStreaming] = useState(isStreamingFlag);
   
-  // Live Editor State
   const [isEditing, setIsEditing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
 
-  // Co-Pilot Chat State
   const [isChatOpen, setIsChatOpen] = useState(false);
   const [chatInput, setChatInput] = useState('');
   const [chatHistory, setChatHistory] = useState<{role: 'user' | 'assistant', text: string}[]>([]);
@@ -95,7 +83,6 @@ export default function DocsViewer() {
     setTimeout(() => setCopied(false), 2000);
   };
 
-  // RESTORED: The core download function
   const handleDownload = () => {
     const blob = new Blob([streamedMarkdown], { type: 'text/markdown' });
     const url = URL.createObjectURL(blob);
@@ -106,52 +93,6 @@ export default function DocsViewer() {
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
-  };
-
-  // NEW: The GitHub Push Trigger
-  const handlePushToGithub = async () => {
-    const token = localStorage.getItem('docurion_gh_token');
-    const owner = localStorage.getItem('docurion_gh_owner');
-    const repo = localStorage.getItem('docurion_gh_repo');
-
-    // Safe Check: Ensure they configured their settings!
-    if (!token || !owner || !repo) {
-      alert("Please configure your GitHub Integration in Settings first!");
-      navigate('/settings');
-      return;
-    }
-
-    setIsPushing(true);
-    try {
-      const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
-      
-      // Determine file name based on what they generated
-      let filename = 'README.md';
-      if (doc?.type === 'API_DOCS') filename = 'API_REFERENCE.md';
-      else if (doc?.type === 'ARCHITECTURE') filename = 'ARCHITECTURE.md';
-
-      const response = await fetch(`${API_URL}/api/push-github`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          token, owner, repo, 
-          path: filename, 
-          content: streamedMarkdown
-        })
-      });
-
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error);
-
-      // Give them a clickable link to their new commit!
-      alert(`Success! Document pushed to GitHub. Check it out at:\n\n${data.url}`);
-
-    } catch (error: any) {
-      console.error("Push Error:", error);
-      alert(error.message || "Failed to push to GitHub.");
-    } finally {
-      setIsPushing(false);
-    }
   };
 
   const handleSaveMarkdown = async () => {
@@ -276,22 +217,6 @@ export default function DocsViewer() {
             {copied ? <CheckCircle2 className="w-4 h-4 text-green-500" /> : <Copy className="w-4 h-4" />}
           </button>
 
-          {/* NEW: Push to GitHub Button */}
-          <button 
-            onClick={handlePushToGithub} 
-            disabled={isStreaming || isPushing} 
-            className="flex items-center gap-2 bg-[#24292e] hover:bg-[#2f363d] text-white px-4 py-2.5 rounded-lg text-sm font-medium transition-all shadow-md disabled:opacity-50 border border-[#1b1f23]"
-          >
-            {isPushing ? <Loader2 className="w-4 h-4 animate-spin" /> : <GithubIcon />}
-            {isPushing ? 'Pushing...' : 'Push to GitHub'}
-          </button>
-
-          {/* RESTORED: The Export Button */}
-          <button onClick={handleDownload} disabled={isStreaming} className="flex items-center gap-2 bg-zinc-800 hover:bg-zinc-700 text-white px-4 py-2.5 rounded-lg text-sm font-medium transition-all shadow-md disabled:opacity-50 border border-zinc-700">
-            <Download className="w-4 h-4" /> Export .md
-          </button>
-
-          {/* RESTORED: The Export Button */}
           <button onClick={handleDownload} disabled={isStreaming} className="flex items-center gap-2 bg-zinc-800 hover:bg-zinc-700 text-white px-4 py-2.5 rounded-lg text-sm font-medium transition-all shadow-md disabled:opacity-50 border border-zinc-700">
             <Download className="w-4 h-4" /> Export .md
           </button>

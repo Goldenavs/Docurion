@@ -41,7 +41,7 @@ app.post('/api/init-doc', async (req, res) => {
 
 app.get('/api/stream-doc/:docId', async (req, res) => {
   const { docId } = req.params;
-  const { complexity = '1' } = req.query; // <-- Catches the slider value!
+  const { complexity = '1' } = req.query; 
 
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache');
@@ -69,7 +69,6 @@ app.get('/api/stream-doc/:docId', async (req, res) => {
     if (doc.type === 'API_DOCS') typeInstructions = "Generate detailed API Documentation focusing on endpoints and payloads.";
     else if (doc.type === 'ARCHITECTURE') typeInstructions = "Generate a System Architecture Document explaining component relationships.";
 
-    // 🔥 THE COMPLEXITY ENGINE
     let complexityInstruction = "";
     switch(complexity) {
       case '1': complexityInstruction = "CRITICAL: Keep the output extremely simple, concise, and high-level. Summarize heavily. Keep it very short. Do not include excessive code blocks."; break;
@@ -108,17 +107,15 @@ app.get('/api/stream-doc/:docId', async (req, res) => {
   } catch (error) {
     let errorMessage = "An error occurred while generating documentation.";
     if (error.status === 429) errorMessage = "\n\n**⚠️ AI Rate Limit Exceeded:** Please wait 1 minute and try again.";
-    
     res.write(`data: ${JSON.stringify({ text: errorMessage })}\n\n`);
     res.write(`data: [DONE]\n\n`);
     res.end();
   }
 });
-// ENDPOINT 3: The Codebase Co-Pilot Chat!
+
+// ENDPOINT 3: The Codebase Co-Pilot Chat
 app.post('/api/chat-doc', async (req, res) => {
   const { docId, message, history = [] } = req.body;
-  
-  // Set headers for raw native fetch streaming
   res.setHeader('Content-Type', 'text/plain');
   res.setHeader('Transfer-Encoding', 'chunked');
 
@@ -140,28 +137,19 @@ app.post('/api/chat-doc', async (req, res) => {
 
     const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
 
-    // Format previous messages for Gemini
     const geminiHistory = history.map(msg => ({
       role: msg.role === 'assistant' ? 'model' : 'user',
       parts: [{ text: msg.text }]
     }));
 
-    // Start a chat session, injecting the codebase into the very first "invisible" message
     const chat = model.startChat({
       history: [
-        { 
-          role: "user", 
-          parts: [{ text: `You are an elite Senior Developer Co-Pilot. Here is the codebase I am working on:\n${projectMap}\n${codeContext}` }] 
-        },
-        { 
-          role: "model", 
-          parts: [{ text: "I have analyzed the codebase. I am ready to answer any questions, explain logic, or write code snippets based on this architecture." }] 
-        },
+        { role: "user", parts: [{ text: `You are an elite Senior Developer Co-Pilot. Here is the codebase I am working on:\n${projectMap}\n${codeContext}` }] },
+        { role: "model", parts: [{ text: "I have analyzed the codebase. I am ready to answer any questions, explain logic, or write code snippets based on this architecture." }] },
         ...geminiHistory
       ]
     });
 
-    // Stream the new message!
     const result = await chat.sendMessageStream(message);
 
     for await (const chunk of result.stream) {
@@ -173,65 +161,6 @@ app.post('/api/chat-doc', async (req, res) => {
     console.error('Chat Error:', error);
     res.write(`\n\n**System Error:** ${error.message}`);
     res.end();
-  }
-});
-
-// ENDPOINT 4: The Enterprise GitHub Integration
-app.post('/api/push-github', async (req, res) => {
-  const { token, owner, repo, path, content, message } = req.body;
-  
-  if (!token || !owner || !repo || !path || !content) {
-    return res.status(400).json({ error: "Missing required GitHub configuration parameters." });
-  }
-
-  try {
-    const getUrl = `https://api.github.com/repos/${owner}/${repo}/contents/${path}`;
-    
-    // 1. Check if the file already exists (We need its SHA to update it)
-    const getResponse = await fetch(getUrl, {
-      headers: {
-        'Authorization': `Bearer ${token}`,
-        'Accept': 'application/vnd.github.v3+json'
-      }
-    });
-
-    let sha = undefined;
-    if (getResponse.ok) {
-      const fileData = await getResponse.json();
-      sha = fileData.sha;
-    }
-
-    // 2. Base64 encode the markdown content (GitHub API requirement)
-    const base64Content = Buffer.from(content).toString('base64');
-    
-    const body = {
-      message: message || `docs: update ${path} via Docurion AI`,
-      content: base64Content,
-      ...(sha && { sha }) // Inject SHA if we are overwriting an existing file
-    };
-
-    // 3. Push the commit!
-    const putResponse = await fetch(getUrl, {
-      method: 'PUT',
-      headers: {
-        'Authorization': `Bearer ${token}`,
-        'Accept': 'application/vnd.github.v3+json',
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify(body)
-    });
-
-    const putData = await putResponse.json();
-
-    if (!putResponse.ok) {
-      throw new Error(putData.message || "Failed to push to GitHub.");
-    }
-
-    // Return the URL to the newly committed file
-    res.json({ success: true, url: putData.content.html_url });
-  } catch (error) {
-    console.error('GitHub Push Error:', error);
-    res.status(500).json({ error: error.message });
   }
 });
 
