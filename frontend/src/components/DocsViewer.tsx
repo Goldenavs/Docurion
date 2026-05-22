@@ -28,6 +28,7 @@ export default function DocsViewer() {
   
   const [isEditing, setIsEditing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [isExportingPDF, setIsExportingPDF] = useState(false);
 
   const [isChatOpen, setIsChatOpen] = useState(false);
   const [chatInput, setChatInput] = useState('');
@@ -117,29 +118,55 @@ export default function DocsViewer() {
     toast.success("Markdown file exported!");
   };
 
+  // ==========================================
+  // THE "GHOSTBUSTER" CLEANUP FUNCTION
+  // ==========================================
+  const performEmergencyCleanup = () => {
+    // 1. Destroy any stray iframes the library failed to remove
+    document.querySelectorAll('iframe').forEach(el => el.remove());
+    // 2. Destroy the specific html2pdf clone wrappers
+    document.querySelectorAll('.html2pdf__container').forEach(el => el.remove());
+    // 3. Destroy the html2canvas invisible containers
+    document.querySelectorAll('.html2canvas-container').forEach(el => el.remove());
+    // 4. Force standard pointer events back onto the body just in case
+    document.body.style.pointerEvents = 'auto';
+  };
+
   const handleExportPDF = () => {
     const element = document.getElementById('markdown-render-area');
     if (!element) return;
 
-    const exportToast = toast.loading('Generating Enterprise PDF...');
+    setIsExportingPDF(true);
+    const exportToast = toast.loading('Generating PDF (This may take a few seconds)...');
 
-    // Fixing the TypeScript strict type assertions
     const opt = {
       margin: 0.5,
       filename: `${doc?.projects?.name || 'Project'}_${doc?.type}.pdf`,
-      image: { type: 'jpeg' as const, quality: 0.98 },
-      html2canvas: { scale: 2, useCORS: true, backgroundColor: '#050505' },
+      image: { type: 'jpeg' as const, quality: 0.95 },
+      html2canvas: { 
+        scale: 1.5, 
+        useCORS: true, 
+        backgroundColor: '#050505',
+        logging: false, // Critical for preventing memory leaks
+        removeContainer: true // Tells html2canvas to try to delete its own container
+      },
       jsPDF: { unit: 'in' as const, format: 'letter' as const, orientation: 'portrait' as const }
     };
 
-    html2pdf().set(opt).from(element).save().then(() => {
-      toast.dismiss(exportToast);
-      toast.success('PDF successfully downloaded!');
-    }).catch((err: any) => {
-      console.error(err);
-      toast.dismiss(exportToast);
-      toast.error('Failed to generate PDF.');
-    });
+    setTimeout(() => {
+      html2pdf().set(opt).from(element).save().then(() => {
+        toast.dismiss(exportToast);
+        toast.success('PDF successfully downloaded!');
+        setIsExportingPDF(false);
+        performEmergencyCleanup(); // Execute on success
+      }).catch((err: any) => {
+        console.error("PDF Export Error:", err);
+        toast.dismiss(exportToast);
+        toast.error('Codebase too large for PDF. Try exporting as .MD');
+        setIsExportingPDF(false);
+        performEmergencyCleanup(); // Execute the Ghostbuster on failure!
+      });
+    }, 100);
   };
 
   const handleSaveMarkdown = async () => {
@@ -261,7 +288,7 @@ export default function DocsViewer() {
           {isEditing ? (
             <button 
               onClick={handleSaveMarkdown} 
-              disabled={isSaving || isStreaming} 
+              disabled={isSaving || isStreaming || isExportingPDF} 
               className="flex items-center gap-2 px-3 lg:px-4 py-2 bg-green-600 hover:bg-green-500 text-white rounded-lg text-xs lg:text-sm font-medium transition-all shadow-md disabled:opacity-50"
             >
               {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
@@ -270,7 +297,7 @@ export default function DocsViewer() {
           ) : (
             <button 
               onClick={() => setIsEditing(true)} 
-              disabled={isStreaming} 
+              disabled={isStreaming || isExportingPDF} 
               className="flex items-center gap-2 px-3 lg:px-4 py-2 bg-[var(--bg-surface)] border border-[var(--border-color)] hover:border-brand-500 hover:text-brand-500 rounded-lg text-xs lg:text-sm font-medium transition-all shadow-sm disabled:opacity-50"
             >
               <Edit3 className="w-4 h-4" /> Live Edit
@@ -292,7 +319,7 @@ export default function DocsViewer() {
           
           <button 
             onClick={handleCopy} 
-            disabled={isStreaming} 
+            disabled={isStreaming || isExportingPDF} 
             className="flex items-center justify-center p-2.5 bg-[var(--bg-surface)] border border-[var(--border-color)] hover:border-brand-500 rounded-lg text-[var(--text-muted)] hover:text-brand-500 transition-all disabled:opacity-50" 
             title="Copy Raw Markdown"
           >
@@ -301,7 +328,7 @@ export default function DocsViewer() {
 
           <button 
             onClick={handleDownloadMD} 
-            disabled={isStreaming} 
+            disabled={isStreaming || isExportingPDF} 
             className="flex items-center gap-2 bg-zinc-800 hover:bg-zinc-700 text-white px-3 lg:px-4 py-2.5 rounded-lg text-xs lg:text-sm font-medium transition-all shadow-md disabled:opacity-50 border border-zinc-700"
           >
             <Download className="w-4 h-4 hidden lg:block" /> .MD
@@ -309,10 +336,11 @@ export default function DocsViewer() {
 
           <button 
             onClick={handleExportPDF} 
-            disabled={isStreaming} 
+            disabled={isStreaming || isExportingPDF} 
             className="flex items-center gap-2 bg-brand-600 hover:bg-brand-500 text-white px-3 lg:px-4 py-2.5 rounded-lg text-xs lg:text-sm font-medium transition-all shadow-md disabled:opacity-50"
           >
-            <FileText className="w-4 h-4 hidden lg:block" /> Export PDF
+            {isExportingPDF ? <Loader2 className="w-4 h-4 hidden lg:block animate-spin" /> : <FileText className="w-4 h-4 hidden lg:block" />}
+            {isExportingPDF ? 'Exporting...' : 'Export PDF'}
           </button>
           
         </div>
