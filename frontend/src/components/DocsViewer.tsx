@@ -2,9 +2,12 @@
 import { useEffect, useState, useRef } from 'react';
 import { useParams, Link, useSearchParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
+import toast from 'react-hot-toast';
+// @ts-ignore
+import html2pdf from 'html2pdf.js';
 import { 
   ArrowLeft, Copy, Download, Loader2, CheckCircle2, 
-  MessageSquare, Send, X, Bot, User, Edit3, Save 
+  MessageSquare, Send, X, Bot, User, Edit3, Save, FileText 
 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
@@ -43,7 +46,12 @@ export default function DocsViewer() {
   const fetchDocument = async () => {
     try {
       setLoading(true);
-      const { data, error } = await supabase.from('docs').select(`*, projects(name)`).eq('id', id).single();
+      const { data, error } = await supabase
+        .from('docs')
+        .select(`*, projects(name)`)
+        .eq('id', id)
+        .single();
+        
       if (error) throw error;
       setDoc(data);
 
@@ -57,6 +65,7 @@ export default function DocsViewer() {
       }
     } catch (error: any) {
       console.error(error);
+      toast.error("Failed to load document.");
       setLoading(false);
     }
   };
@@ -67,23 +76,35 @@ export default function DocsViewer() {
     const sse = new EventSource(`${API_URL}/api/stream-doc/${id}?complexity=${complexity}`);
 
     sse.onmessage = (event) => {
-      if (event.data === '[DONE]') { setIsStreaming(false); sse.close(); return; }
+      if (event.data === '[DONE]') { 
+        setIsStreaming(false); 
+        sse.close(); 
+        toast.success("Generation complete!"); 
+        return; 
+      }
       try {
         const parsed = JSON.parse(event.data);
         if (parsed.error) throw new Error(parsed.error);
         setStreamedMarkdown((prev) => prev + parsed.text);
-      } catch (err) { sse.close(); }
+      } catch (err) { 
+        sse.close(); 
+      }
     };
-    sse.onerror = () => { sse.close(); setIsStreaming(false); };
+    
+    sse.onerror = () => { 
+      sse.close(); 
+      setIsStreaming(false); 
+    };
   };
 
   const handleCopy = () => {
     navigator.clipboard.writeText(streamedMarkdown);
     setCopied(true);
+    toast.success("Markdown copied to clipboard!");
     setTimeout(() => setCopied(false), 2000);
   };
 
-  const handleDownload = () => {
+  const handleDownloadMD = () => {
     const blob = new Blob([streamedMarkdown], { type: 'text/markdown' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -93,17 +114,52 @@ export default function DocsViewer() {
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
+    toast.success("Markdown file exported!");
+  };
+
+  const handleExportPDF = () => {
+    const element = document.getElementById('markdown-render-area');
+    if (!element) return;
+
+    const exportToast = toast.loading('Generating Enterprise PDF...');
+
+    // Fixing the TypeScript strict type assertions
+    const opt = {
+      margin: 0.5,
+      filename: `${doc?.projects?.name || 'Project'}_${doc?.type}.pdf`,
+      image: { type: 'jpeg' as const, quality: 0.98 },
+      html2canvas: { scale: 2, useCORS: true, backgroundColor: '#050505' },
+      jsPDF: { unit: 'in' as const, format: 'letter' as const, orientation: 'portrait' as const }
+    };
+
+    html2pdf().set(opt).from(element).save().then(() => {
+      toast.dismiss(exportToast);
+      toast.success('PDF successfully downloaded!');
+    }).catch((err: any) => {
+      console.error(err);
+      toast.dismiss(exportToast);
+      toast.error('Failed to generate PDF.');
+    });
   };
 
   const handleSaveMarkdown = async () => {
     setIsSaving(true);
+    const saveToast = toast.loading('Saving changes...');
     try {
-      const { error } = await supabase.from('docs').update({ content: { markdown: streamedMarkdown } }).eq('id', id);
+      const { error } = await supabase
+        .from('docs')
+        .update({ content: { markdown: streamedMarkdown } })
+        .eq('id', id);
+        
       if (error) throw error;
+      
       setIsEditing(false);
+      toast.dismiss(saveToast);
+      toast.success("Changes saved successfully!");
     } catch (error: any) {
       console.error("Save error:", error);
-      alert("Failed to save changes.");
+      toast.dismiss(saveToast);
+      toast.error("Failed to save changes.");
     } finally {
       setIsSaving(false);
     }
@@ -140,7 +196,7 @@ export default function DocsViewer() {
         
         const chunk = decoder.decode(value, { stream: true });
         aiMessage += chunk;
-
+        
         setChatHistory(prev => {
           const newHistory = [...prev];
           newHistory[newHistory.length - 1].text = aiMessage;
@@ -149,6 +205,7 @@ export default function DocsViewer() {
       }
     } catch (error) {
       console.error("Chat error:", error);
+      toast.error("Co-Pilot disconnected.");
     } finally {
       setIsChatStreaming(false);
     }
@@ -182,52 +239,87 @@ export default function DocsViewer() {
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="h-full flex flex-col pb-6">
       
-      {/* Header Bar */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4 border-b border-[var(--border-color)] pb-4 shrink-0">
+      {/* HEADER BAR */}
+      <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center mb-6 gap-4 border-b border-[var(--border-color)] pb-4 shrink-0">
         <div>
           <Link to={`/project/${doc?.project_id}`} className="inline-flex items-center text-sm font-medium text-[var(--text-muted)] hover:text-brand-500 mb-2 transition-colors">
             <ArrowLeft className="w-4 h-4 mr-2" /> Back to Project
           </Link>
           <h1 className="font-display text-2xl font-bold tracking-tight flex items-center gap-3">
             {doc?.projects?.name || 'Project'} <span className="text-brand-500">{doc?.type}</span>
-            {isStreaming && <span className="flex h-3 w-3 relative"><span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-brand-400 opacity-75"></span><span className="relative inline-flex rounded-full h-3 w-3 bg-brand-500"></span></span>}
+            {isStreaming && (
+              <span className="flex h-3 w-3 relative">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-brand-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-3 w-3 bg-brand-500"></span>
+              </span>
+            )}
           </h1>
         </div>
         
-        <div className="flex flex-wrap items-center gap-3">
+        <div className="flex flex-wrap items-center gap-2 lg:gap-3">
           
           {isEditing ? (
-            <button onClick={handleSaveMarkdown} disabled={isSaving || isStreaming} className="flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-500 text-white rounded-lg text-sm font-medium transition-all shadow-md disabled:opacity-50">
+            <button 
+              onClick={handleSaveMarkdown} 
+              disabled={isSaving || isStreaming} 
+              className="flex items-center gap-2 px-3 lg:px-4 py-2 bg-green-600 hover:bg-green-500 text-white rounded-lg text-xs lg:text-sm font-medium transition-all shadow-md disabled:opacity-50"
+            >
               {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-              {isSaving ? 'Saving...' : 'Save Changes'}
+              {isSaving ? 'Saving...' : 'Save'}
             </button>
           ) : (
-            <button onClick={() => setIsEditing(true)} disabled={isStreaming} className="flex items-center gap-2 px-4 py-2 bg-[var(--bg-surface)] border border-[var(--border-color)] hover:border-brand-500 hover:text-brand-500 rounded-lg text-sm font-medium transition-all shadow-sm disabled:opacity-50">
+            <button 
+              onClick={() => setIsEditing(true)} 
+              disabled={isStreaming} 
+              className="flex items-center gap-2 px-3 lg:px-4 py-2 bg-[var(--bg-surface)] border border-[var(--border-color)] hover:border-brand-500 hover:text-brand-500 rounded-lg text-xs lg:text-sm font-medium transition-all shadow-sm disabled:opacity-50"
+            >
               <Edit3 className="w-4 h-4" /> Live Edit
             </button>
           )}
 
-          <button onClick={() => setIsChatOpen(!isChatOpen)} className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all shadow-md ${isChatOpen ? 'bg-brand-600 text-white hover:bg-brand-500' : 'bg-[var(--bg-surface)] border border-[var(--border-color)] hover:border-brand-500'}`}>
+          <button 
+            onClick={() => setIsChatOpen(!isChatOpen)} 
+            className={`flex items-center gap-2 px-3 lg:px-4 py-2 rounded-lg text-xs lg:text-sm font-medium transition-all shadow-md ${
+              isChatOpen 
+                ? 'bg-brand-600 text-white hover:bg-brand-500' 
+                : 'bg-[var(--bg-surface)] border border-[var(--border-color)] hover:border-brand-500'
+            }`}
+          >
             <MessageSquare className="w-4 h-4" /> Co-Pilot
           </button>
           
           <div className="h-6 w-px bg-[var(--border-color)] mx-1 hidden sm:block"></div>
           
-          <button onClick={handleCopy} disabled={isStreaming} className="flex items-center justify-center p-2.5 bg-[var(--bg-surface)] border border-[var(--border-color)] hover:border-brand-500 rounded-lg text-[var(--text-muted)] hover:text-brand-500 transition-all disabled:opacity-50 tooltip-trigger" title="Copy Raw Markdown">
+          <button 
+            onClick={handleCopy} 
+            disabled={isStreaming} 
+            className="flex items-center justify-center p-2.5 bg-[var(--bg-surface)] border border-[var(--border-color)] hover:border-brand-500 rounded-lg text-[var(--text-muted)] hover:text-brand-500 transition-all disabled:opacity-50" 
+            title="Copy Raw Markdown"
+          >
             {copied ? <CheckCircle2 className="w-4 h-4 text-green-500" /> : <Copy className="w-4 h-4" />}
           </button>
 
-          <button onClick={handleDownload} disabled={isStreaming} className="flex items-center gap-2 bg-zinc-800 hover:bg-zinc-700 text-white px-4 py-2.5 rounded-lg text-sm font-medium transition-all shadow-md disabled:opacity-50 border border-zinc-700">
-            <Download className="w-4 h-4" /> Export .md
+          <button 
+            onClick={handleDownloadMD} 
+            disabled={isStreaming} 
+            className="flex items-center gap-2 bg-zinc-800 hover:bg-zinc-700 text-white px-3 lg:px-4 py-2.5 rounded-lg text-xs lg:text-sm font-medium transition-all shadow-md disabled:opacity-50 border border-zinc-700"
+          >
+            <Download className="w-4 h-4 hidden lg:block" /> .MD
+          </button>
+
+          <button 
+            onClick={handleExportPDF} 
+            disabled={isStreaming} 
+            className="flex items-center gap-2 bg-brand-600 hover:bg-brand-500 text-white px-3 lg:px-4 py-2.5 rounded-lg text-xs lg:text-sm font-medium transition-all shadow-md disabled:opacity-50"
+          >
+            <FileText className="w-4 h-4 hidden lg:block" /> Export PDF
           </button>
           
         </div>
       </div>
 
-      {/* Dynamic Flex Container */}
+      {/* DYNAMIC FLEX CONTAINER */}
       <div className="flex flex-1 gap-6 overflow-hidden relative w-full">
-        
-        {/* Left Side: Editor & Preview Area */}
         <div className={`flex-1 flex gap-6 overflow-hidden transition-all duration-300 ${!isEditing && !isChatOpen ? 'max-w-5xl mx-auto w-full' : 'w-full'}`}>
 
           {isEditing && (
@@ -235,19 +327,19 @@ export default function DocsViewer() {
               <div className="px-4 py-3 bg-[var(--bg-base)] border-b border-[var(--border-color)] text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wider flex items-center gap-2">
                 <Edit3 className="w-4 h-4" /> Raw Markdown
               </div>
-              <textarea
-                value={streamedMarkdown}
-                onChange={(e) => setStreamedMarkdown(e.target.value)}
-                className="flex-1 w-full p-6 bg-transparent resize-none outline-none font-mono text-sm text-[var(--text-main)] custom-scrollbar leading-relaxed"
-                spellCheck={false}
-                placeholder="Start typing your markdown here..."
+              <textarea 
+                value={streamedMarkdown} 
+                onChange={(e) => setStreamedMarkdown(e.target.value)} 
+                className="flex-1 w-full p-6 bg-transparent resize-none outline-none font-mono text-sm text-[var(--text-main)] custom-scrollbar leading-relaxed" 
+                spellCheck={false} 
+                placeholder="Start typing your markdown here..." 
               />
             </div>
           )}
 
-          {/* Rendered Preview Pane */}
+          {/* THE PREVIEW PANE (ID hooked for HTML2PDF) */}
           <div className={`flex-1 overflow-y-auto custom-scrollbar bg-[var(--bg-surface)] border border-[var(--border-color)] rounded-2xl p-6 md:p-10 shadow-sm ${isEditing ? 'shrink-0 min-w-[300px]' : ''}`}>
-            <div className="prose dark:prose-invert max-w-none prose-headings:font-display prose-a:text-brand-500 hover:prose-a:text-brand-400">
+            <div id="markdown-render-area" className="prose dark:prose-invert max-w-none prose-headings:font-display prose-a:text-brand-500 hover:prose-a:text-brand-400 pb-10">
               <ReactMarkdown components={markdownComponents}>{streamedMarkdown}</ReactMarkdown>
               {isStreaming && <span className="inline-block w-2 h-5 bg-brand-500 ml-1 animate-pulse align-middle" />}
             </div>
@@ -255,14 +347,14 @@ export default function DocsViewer() {
 
         </div>
 
-        {/* Right Side: Co-Pilot Chat Panel */}
+        {/* CO-PILOT CHAT PANEL */}
         <AnimatePresence>
           {isChatOpen && (
             <motion.div 
-              initial={{ opacity: 0, x: 50, width: 0 }}
-              animate={{ opacity: 1, x: 0, width: '400px' }}
-              exit={{ opacity: 0, x: 50, width: 0 }}
-              transition={{ type: "spring", stiffness: 300, damping: 30 }}
+              initial={{ opacity: 0, x: 50, width: 0 }} 
+              animate={{ opacity: 1, x: 0, width: '400px' }} 
+              exit={{ opacity: 0, x: 50, width: 0 }} 
+              transition={{ type: "spring", stiffness: 300, damping: 30 }} 
               className="hidden lg:flex flex-col bg-[var(--bg-surface)] border border-[var(--border-color)] rounded-2xl shadow-xl overflow-hidden shrink-0"
             >
               <div className="p-4 border-b border-[var(--border-color)] bg-[var(--bg-base)] flex items-center justify-between">
@@ -280,7 +372,6 @@ export default function DocsViewer() {
                   <div className="h-full flex flex-col items-center justify-center text-center opacity-50">
                     <MessageSquare className="w-10 h-10 mb-3" />
                     <p>Ask anything about this codebase.</p>
-                    <p className="text-xs mt-1">E.g., "Where is authentication handled?"</p>
                   </div>
                 ) : (
                   chatHistory.map((msg, idx) => (
@@ -301,12 +392,16 @@ export default function DocsViewer() {
                 <form onSubmit={handleSendMessage} className="relative">
                   <input 
                     type="text" 
-                    value={chatInput}
-                    onChange={(e) => setChatInput(e.target.value)}
-                    placeholder="Ask Co-Pilot..."
-                    className="w-full pl-4 pr-12 py-3 bg-[var(--bg-surface)] border border-[var(--border-color)] rounded-xl focus:outline-none focus:border-brand-500 transition-colors text-sm"
+                    value={chatInput} 
+                    onChange={(e) => setChatInput(e.target.value)} 
+                    placeholder="Ask Co-Pilot..." 
+                    className="w-full pl-4 pr-12 py-3 bg-[var(--bg-surface)] border border-[var(--border-color)] rounded-xl focus:outline-none focus:border-brand-500 transition-colors text-sm" 
                   />
-                  <button type="submit" disabled={isChatStreaming || !chatInput.trim()} className="absolute right-2 top-1/2 -translate-y-1/2 p-2 bg-brand-600 hover:bg-brand-500 text-white rounded-lg disabled:opacity-50 transition-colors">
+                  <button 
+                    type="submit" 
+                    disabled={isChatStreaming || !chatInput.trim()} 
+                    className="absolute right-2 top-1/2 -translate-y-1/2 p-2 bg-brand-600 hover:bg-brand-500 text-white rounded-lg disabled:opacity-50 transition-colors"
+                  >
                     <Send className="w-4 h-4" />
                   </button>
                 </form>
@@ -314,7 +409,6 @@ export default function DocsViewer() {
             </motion.div>
           )}
         </AnimatePresence>
-
       </div>
     </motion.div>
   );
