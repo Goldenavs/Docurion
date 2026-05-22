@@ -7,6 +7,17 @@ import { GoogleGenerativeAI } from '@google/generative-ai';
 
 dotenv.config();
 
+// =======================================================================
+// 🛡️ CRITICAL FIX: The Global Safety Net
+// This prevents rogue Google SDK stream errors from crashing the Node server!
+// =======================================================================
+process.on('uncaughtException', (err) => {
+  console.error('⚠️ Uncaught Exception intercepted. Server kept alive:', err.message);
+});
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('⚠️ Unhandled Rejection intercepted. Server kept alive:', reason);
+});
+
 const app = express();
 app.use(cors());
 app.use(express.json());
@@ -22,6 +33,7 @@ function generateFileTree(files) {
   return treeString;
 }
 
+// ENDPOINT 1: Init Document
 app.post('/api/init-doc', async (req, res) => {
   try {
     const { projectId, type = 'README' } = req.body;
@@ -39,6 +51,7 @@ app.post('/api/init-doc', async (req, res) => {
   }
 });
 
+// ENDPOINT 2: The Main Document Generator Stream
 app.get('/api/stream-doc/:docId', async (req, res) => {
   const { docId } = req.params;
   const { complexity = '1' } = req.query; 
@@ -59,6 +72,7 @@ app.get('/api/stream-doc/:docId', async (req, res) => {
       codeContext += `\n\n--- FILE: ${f.filename} ---\n\`\`\`${f.language}\n${f.content}\n\`\`\``;
     });
 
+    // Master Generation allows up to 800k characters (approx 200k tokens)
     if (codeContext.length > 800000) {
       codeContext = codeContext.substring(0, 800000) + "\n\n...[WARNING: CODEBASE TRUNCATED DUE TO AI LIMITS]...";
     }
@@ -107,9 +121,13 @@ app.get('/api/stream-doc/:docId', async (req, res) => {
   } catch (error) {
     let errorMessage = "An error occurred while generating documentation.";
     if (error.status === 429) errorMessage = "\n\n**⚠️ AI Rate Limit Exceeded:** Please wait 1 minute and try again.";
-    res.write(`data: ${JSON.stringify({ text: errorMessage })}\n\n`);
-    res.write(`data: [DONE]\n\n`);
-    res.end();
+    
+    // Safety check: ensure response headers haven't been sent before writing
+    if (!res.headersSent) {
+      res.write(`data: ${JSON.stringify({ text: errorMessage })}\n\n`);
+      res.write(`data: [DONE]\n\n`);
+      res.end();
+    }
   }
 });
 
@@ -131,15 +149,16 @@ app.post('/api/chat-doc', async (req, res) => {
       codeContext += `\n\n--- FILE: ${f.filename} ---\n\`\`\`${f.language}\n${f.content}\n\`\`\``;
     });
 
-    if (codeContext.length > 800000) {
-      codeContext = codeContext.substring(0, 800000) + "\n\n...[TRUNCATED]...";
+    // ⚡ CHAT OPTIMIZATION: Chat context is capped smaller (200k chars) to prevent stream crashes
+    if (codeContext.length > 200000) {
+      codeContext = codeContext.substring(0, 200000) + "\n\n...[TRUNCATED FOR CHAT PERFORMANCE]...";
     }
 
     const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
 
     const geminiHistory = history.map(msg => ({
       role: msg.role === 'assistant' ? 'model' : 'user',
-      parts: [{ text: msg.text }]
+      parts: [{ text: msg.text || " " }] // Fallback to space to prevent API rejection on empty strings
     }));
 
     const chat = model.startChat({
@@ -158,9 +177,12 @@ app.post('/api/chat-doc', async (req, res) => {
     res.end();
 
   } catch (error) {
-    console.error('Chat Error:', error);
-    res.write(`\n\n**System Error:** ${error.message}`);
-    res.end();
+    console.error('Chat Error Details:', error.message);
+    
+    if (!res.headersSent) {
+      res.write(`\n\n**System Error:** ${error.message || "Failed to parse stream from API."}`);
+      res.end();
+    }
   }
 });
 
